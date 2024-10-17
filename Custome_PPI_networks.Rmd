@@ -1,5 +1,5 @@
 ---
-title: "PPI networks, node size by centrality and color assigned by OG"
+title: "Custome_PPI_networks"
 output:
   html_document:
     df_print: paged
