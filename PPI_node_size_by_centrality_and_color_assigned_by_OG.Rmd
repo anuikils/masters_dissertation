@@ -1,0 +1,103 @@
+---
+title: "PPI networks, node size by centrality and color assigned by OG"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+library(igraph)
+library(visNetwork)
+library(rcartocolor)
+library(RColorBrewer)
+library(readr)
+library(ggplot2)
+
+# Set the seed for reproducibility
+set.seed(22)
+
+# Define the path to the folder containing the TSV files
+folder_path <- "prueba_redes_pesos/"
+
+# Get a list of all TSV files in the folder
+tsv_files <- list.files(path = folder_path, pattern = "*.tsv", full.names = TRUE)
+
+# Initialize a dataframe to store all nodes and their OGs
+all_nodes_df <- data.frame(node = character(), OG = character(), stringsAsFactors = FALSE)
+
+# Loop through each file to read the data and combine the nodes and OGs
+for (file in tsv_files) {
+    df_edges <- readr::read_tsv(file)
+    nodes_df <- data.frame(
+        node = c(df_edges$node1, df_edges$node2),
+        OG = c(df_edges$node1_OG, df_edges$node2_OG)
+    )
+    all_nodes_df <- rbind(all_nodes_df, unique(nodes_df))
+}
+
+# Assign colors to nodes based on OG
+unique_OGs <- unique(all_nodes_df$OG)
+num_colors <- length(unique_OGs)
+color_palette <- colorRampPalette(brewer.pal(12, "Set3"))(num_colors)
+names(color_palette) <- unique_OGs
+
+# Add color information to the all_nodes_df
+all_nodes_df$color <- color_palette[as.character(all_nodes_df$OG)]
+
+# Function to create and display a network for a given file
+create_network <- function(df_edges, nodes_df, all_nodes_df) {
+    # Create the graph
+    g <- graph.data.frame(d = df_edges[, c("node1", "node2")], directed = FALSE)
+    
+    # Apply Louvain algorithm for community detection
+    communities <- cluster_louvain(g)
+    
+    # Calculate betweenness centrality
+    betweenness_values <- betweenness(g)
+    min_size <- 10
+    max_size <- 100
+    normalized_betweenness_sizes <- min_size + (betweenness_values - min(betweenness_values)) / (max(betweenness_values) - min(betweenness_values)) * (max_size - min_size)
+    
+    # Create nodes dataframe for visNetwork
+    nodes <- data.frame(
+        id = V(g)$name,
+        label = V(g)$name,
+        size = normalized_betweenness_sizes,
+        color = all_nodes_df$color[match(V(g)$name, all_nodes_df$node)],
+        group = communities$membership  # Add group for community
+    )
+    
+    # Create edges dataframe for visNetwork
+    edges <- data.frame(
+        from = df_edges$node1,
+        to = df_edges$node2
+    )
+    
+    # Create and display the interactive network with larger canvas and higher resolution
+    network <- visNetwork(nodes, edges, height = "1500px", width = "2000px") %>%
+        visEdges(smooth = FALSE) %>%
+        visOptions(highlightNearest = TRUE, nodesIdSelection = TRUE) %>%
+        visPhysics(solver = "barnesHut", stabilization = list(enabled = TRUE, iterations = 1000)) %>%
+        visInteraction(dragNodes = TRUE, dragView = TRUE, zoomView = TRUE) %>%
+        visEvents(stabilizationIterationsDone = "function () {this.setOptions({physics: true});}")
+    
+    return(network)
+}
+
+# Loop through each file to create and display the networks
+for (file in tsv_files) {
+    df_edges <- readr::read_tsv(file)
+    nodes_df <- data.frame(
+        node = c(df_edges$node1, df_edges$node2),
+        OG = c(df_edges$node1_OG, df_edges$node2_OG)
+    )
+    unique_nodes_df <- unique(nodes_df)
+    
+    network <- create_network(df_edges, unique_nodes_df, all_nodes_df)
+    
+    # Display the network
+    print(network)
+}
+```
+
+
